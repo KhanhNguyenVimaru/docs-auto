@@ -8,15 +8,37 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 
     <style>
+        :root {
+            --preview-font: "Bahnschrift", sans-serif;
+        }
+
+        body,
+        button,
+        input,
+        textarea,
+        select,
+        .btn,
+        .card,
+        .menu,
+        .table {
+            font-family: "Bahnschrift", sans-serif;
+        }
+
         /* Drop zone animation */
-        .drop-active { border-color: oklch(var(--p)) !important; background: oklch(var(--p) / .06) !important; }
+        .drop-active {
+            border-color: oklch(var(--p)) !important;
+            background: oklch(var(--p) / .06) !important;
+        }
 
         /* Sidebar panel scroll */
-        .sidebar-scroll { scrollbar-width: thin; scrollbar-color: oklch(var(--b3)) transparent; }
+        .sidebar-scroll {
+            scrollbar-width: thin;
+            scrollbar-color: oklch(var(--b3)) transparent;
+        }
 
         /* Preview area */
         #preview-frame {
-            font-family: var(--preview-font, 'Times New Roman', serif);
+            font-family: "Bahnschrift", sans-serif;
             font-size: var(--preview-size, 13pt);
             line-height: var(--preview-line, 1.5);
             color: oklch(var(--bc));
@@ -24,9 +46,14 @@
 
         /* Skeleton pulse for loading state */
         @keyframes shimmer {
-            0% { opacity: .4 } 50% { opacity: .8 } 100% { opacity: .4 }
+            0% { opacity: .4; }
+            50% { opacity: .8; }
+            100% { opacity: .4; }
         }
-        .shimmer { animation: shimmer 1.6s ease-in-out infinite; }
+
+        .shimmer {
+            animation: shimmer 1.6s ease-in-out infinite;
+        }
 
         /* Sidebar slide transition */
         #sidebar {
@@ -35,6 +62,7 @@
                         padding 0.25s ease;
             overflow: hidden;
         }
+
         #sidebar.collapsed {
             width: 0 !important;
             opacity: 0;
@@ -46,6 +74,7 @@
         #sidebar-toggle svg {
             transition: transform 0.25s ease;
         }
+
         #sidebar-toggle.collapsed svg {
             transform: rotate(180deg);
         }
@@ -70,12 +99,6 @@
 
             <!-- Logo -->
             <a href="#" class="flex items-center gap-2.5 font-black text-lg tracking-tight">
-                <span class="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-primary-content shadow">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-4 h-4">
-                        <path d="M5.625 1.5c-1.036 0-1.875.84-1.875 1.875v17.25c0 1.035.84 1.875 1.875 1.875h12.75c1.035 0 1.875-.84 1.875-1.875V12.75A3.75 3.75 0 0016.5 9h-1.875a1.875 1.875 0 01-1.875-1.875V5.25A3.75 3.75 0 009 1.5H5.625z"/>
-                        <path d="M12.971 1.816A5.23 5.23 0 0114.25 5.25v1.875c0 .207.168.375.375.375H16.5a5.23 5.23 0 013.434 1.279 9.768 9.768 0 00-6.963-6.963z"/>
-                    </svg>
-                </span>
                 <span>Doc<span class="text-primary">Formatter</span></span>
             </a>
         </div>
