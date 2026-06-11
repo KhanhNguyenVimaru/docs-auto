@@ -239,14 +239,14 @@ class DocumentProcessingService
         foreach ($phpWord->getSections() as $sectionIndex => $section) {
             $sectionPath = 'Section ' . ($sectionIndex + 1);
             $this->applySectionStyle($section->getStyle(), $template);
-            $this->traverseContainer($section, $template, $styleMetadata, $state, $report, $sectionPath, true);
+            $this->traverseContainer($section, $template, $styleMetadata, $state, $report, $sectionPath, true, null, true);
 
             foreach ($section->getHeaders() as $headerIndex => $header) {
-                $this->traverseContainer($header, $template, $styleMetadata, $state, $report, $sectionPath . ' > Header ' . ($headerIndex + 1), true);
+                $this->traverseContainer($header, $template, $styleMetadata, $state, $report, $sectionPath . ' > Header ' . ($headerIndex + 1), true, null, true);
             }
 
             foreach ($section->getFooters() as $footerIndex => $footer) {
-                $this->traverseContainer($footer, $template, $styleMetadata, $state, $report, $sectionPath . ' > Footer ' . ($footerIndex + 1), true);
+                $this->traverseContainer($footer, $template, $styleMetadata, $state, $report, $sectionPath . ' > Footer ' . ($footerIndex + 1), true, null, true);
             }
         }
 
@@ -282,7 +282,7 @@ class DocumentProcessingService
         $style->setMarginRight(DocumentFormatHelper::cmToTwips((float) $template->right_margin_cm));
     }
 
-    private function traverseContainer(object $container, DocumentTemplate $template, array $styleMetadata, array &$state, array &$report, string $path, bool $applyFormatting, ?int $headingLevelContext = null): void
+    private function traverseContainer(object $container, DocumentTemplate $template, array $styleMetadata, array &$state, array &$report, string $path, bool $applyFormatting, ?int $headingLevelContext = null, bool $isTopLevel = false): void
     {
         if ($container instanceof Table) {
             foreach ($container->getRows() as $rowIndex => $row) {
@@ -298,7 +298,7 @@ class DocumentProcessingService
 
         foreach ($container->getElements() as $elementIndex => $element) {
             $elementPath = $path . ' > ' . class_basename($element) . ' ' . ($elementIndex + 1);
-            $this->traverseElement($element, $template, $styleMetadata, $state, $report, $elementPath, $applyFormatting, $headingLevelContext);
+            $this->traverseElement($element, $template, $styleMetadata, $state, $report, $elementPath, $applyFormatting, $headingLevelContext, $isTopLevel);
         }
     }
 
@@ -317,11 +317,11 @@ class DocumentProcessingService
 
         foreach ($cell->getElements() as $elementIndex => $element) {
             $elementPath = $path . ' > ' . class_basename($element) . ' ' . ($elementIndex + 1);
-            $this->traverseElement($element, $template, $styleMetadata, $state, $report, $elementPath, $applyFormatting, $headingLevelContext);
+            $this->traverseElement($element, $template, $styleMetadata, $state, $report, $elementPath, $applyFormatting, $headingLevelContext, true);
         }
     }
 
-    private function traverseElement(object $element, DocumentTemplate $template, array $styleMetadata, array &$state, array &$report, string $path, bool $applyFormatting, ?int $headingLevelContext = null): void
+    private function traverseElement(object $element, DocumentTemplate $template, array $styleMetadata, array &$state, array &$report, string $path, bool $applyFormatting, ?int $headingLevelContext = null, bool $isTopLevel = false): void
     {
         if ($element instanceof Title) {
             $this->handleTitle($element, $template, $state, $report, $path, $applyFormatting);
@@ -329,44 +329,126 @@ class DocumentProcessingService
             return;
         }
 
+        if ($element instanceof \PhpOffice\PhpWord\Element\Image) {
+            if ($applyFormatting) {
+                $this->processImageElement($element, $template);
+            }
+            return;
+        }
+
+        if ($element instanceof \PhpOffice\PhpWord\Element\ListItem) {
+            if ($applyFormatting) {
+                $textObj = $element->getTextObject();
+                if ($textObj !== null) {
+                    $textObj->setParagraphStyle([
+                        'spaceAfter' => 0,
+                        'spaceBefore' => 0,
+                        'lineHeight' => 1.0,
+                    ]);
+                }
+            }
+            $this->traverseContainer($element, $template, $styleMetadata, $state, $report, $path, $applyFormatting, $headingLevelContext, false);
+            return;
+        }
+
         $headingLevel = $this->resolveHeadingLevel($element, $styleMetadata) ?? $headingLevelContext;
 
         if ($element instanceof TextRun) {
+            $hasImage = $this->hasImage($element);
+
             if ($applyFormatting) {
-                $element->setParagraphStyle($this->buildParagraphStyleForLevel($template, $headingLevel));
+                if ($hasImage) {
+                    $leftMargin = (float) $template->left_margin_cm;
+                    $rightMargin = (float) $template->right_margin_cm;
+                    $printableWidthPt = (21.0 - $leftMargin - $rightMargin) * 28.35;
+
+                    $hasNarrow = false;
+                    foreach ($element->getElements() as $child) {
+                        if ($child instanceof \PhpOffice\PhpWord\Element\Image) {
+                            $this->processImageElement($child, $template);
+                            $style = $child->getStyle();
+                            if ($style !== null && (float) $style->getWidth() < $printableWidthPt - 0.5) {
+                                $hasNarrow = true;
+                            }
+                        }
+                    }
+
+                    $element->setParagraphStyle([
+                        'alignment' => \PhpOffice\PhpWord\SimpleType\Jc::CENTER,
+                        'spaceAfter' => (int) round($template->line_spacing * $template->font_size * 20),
+                    ]);
+                } else {
+                    if ($element instanceof \PhpOffice\PhpWord\Element\ListItemRun) {
+                        $element->setParagraphStyle([
+                            'spaceAfter' => 0,
+                            'spaceBefore' => 0,
+                            'lineHeight' => 1.0,
+                        ]);
+                    } else {
+                        $element->setParagraphStyle($this->buildParagraphStyleForLevel($template, $headingLevel));
+
+                        if ($isTopLevel && $headingLevel === null) {
+                            $elements = $element->getElements();
+                            if (count($elements) > 0 && $elements[0] instanceof Text) {
+                                $firstText = $elements[0];
+                                $val = $firstText->getText();
+                                if (!str_starts_with($val, "\t")) {
+                                    $firstText->setText("\t" . $val);
+                                }
+                            } else {
+                                $this->prependTabToTextRun($element, $template);
+                            }
+                        }
+                    }
+                }
             }
 
-            $this->traverseContainer($element, $template, $styleMetadata, $state, $report, $path, $applyFormatting, $headingLevel);
+            $this->traverseContainer($element, $template, $styleMetadata, $state, $report, $path, $applyFormatting, $headingLevel, false);
 
             return;
         }
 
         if ($element instanceof Table) {
-            $this->traverseContainer($element, $template, $styleMetadata, $state, $report, $path, $applyFormatting, $headingLevel);
+            $this->traverseContainer($element, $template, $styleMetadata, $state, $report, $path, $applyFormatting, $headingLevel, false);
 
             return;
         }
 
         if ($element instanceof Text) {
+            if ($applyFormatting && $isTopLevel && $headingLevel === null) {
+                $val = $element->getText();
+                if (!str_starts_with($val, "\t")) {
+                    $element->setText("\t" . $val);
+                }
+            }
             $this->handleTextElement($element, $template, $headingLevel, $report, $path, $applyFormatting);
 
             return;
         }
 
         if ($element instanceof Header || $element instanceof Footer) {
-            $this->traverseContainer($element, $template, $styleMetadata, $state, $report, $path, $applyFormatting, $headingLevel);
+            $this->traverseContainer($element, $template, $styleMetadata, $state, $report, $path, $applyFormatting, $headingLevel, true);
 
             return;
         }
 
         if (method_exists($element, 'setFontStyle') && method_exists($element, 'setParagraphStyle')) {
+            $hasImage = $this->hasImage($element);
+            if ($applyFormatting && $isTopLevel && $headingLevel === null && !$hasImage) {
+                if (method_exists($element, 'getText') && method_exists($element, 'setText')) {
+                    $val = $element->getText();
+                    if (!str_starts_with($val, "\t")) {
+                        $element->setText("\t" . $val);
+                    }
+                }
+            }
             $this->handleTextLikeElement($element, $template, $headingLevel, $report, $path, $applyFormatting);
 
             return;
         }
 
         if (method_exists($element, 'getElements')) {
-            $this->traverseContainer($element, $template, $styleMetadata, $state, $report, $path, $applyFormatting, $headingLevel);
+            $this->traverseContainer($element, $template, $styleMetadata, $state, $report, $path, $applyFormatting, $headingLevel, false);
         }
     }
 
@@ -389,7 +471,7 @@ class DocumentProcessingService
                 ++$report['numbered_headings'];
             }
 
-            $this->traverseContainer($titleText, $template, [], $state, $report, $path . ' > TitleText', $applyFormatting, $depth);
+            $this->traverseContainer($titleText, $template, [], $state, $report, $path . ' > TitleText', $applyFormatting, $depth, false);
         }
     }
 
@@ -461,14 +543,14 @@ class DocumentProcessingService
         foreach ($phpWord->getSections() as $sectionIndex => $section) {
             $sectionPath = 'Section ' . ($sectionIndex + 1);
             $this->validateSectionStyle($section->getStyle(), $template, $sectionPath, $issues);
-            $this->walkValidationContainer($section, $template, $styleMetadata, $state, $issues, $sectionPath);
+            $this->walkValidationContainer($section, $template, $styleMetadata, $state, $issues, $sectionPath, null, true);
 
             foreach ($section->getHeaders() as $headerIndex => $header) {
-                $this->walkValidationContainer($header, $template, $styleMetadata, $state, $issues, $sectionPath . ' > Header ' . ($headerIndex + 1));
+                $this->walkValidationContainer($header, $template, $styleMetadata, $state, $issues, $sectionPath . ' > Header ' . ($headerIndex + 1), null, true);
             }
 
             foreach ($section->getFooters() as $footerIndex => $footer) {
-                $this->walkValidationContainer($footer, $template, $styleMetadata, $state, $issues, $sectionPath . ' > Footer ' . ($footerIndex + 1));
+                $this->walkValidationContainer($footer, $template, $styleMetadata, $state, $issues, $sectionPath . ' > Footer ' . ($footerIndex + 1), null, true);
             }
         }
 
@@ -516,7 +598,7 @@ class DocumentProcessingService
         );
     }
 
-    private function walkValidationContainer(object $container, DocumentTemplate $template, array $styleMetadata, array &$state, array &$issues, string $path, ?int $headingLevelContext = null): void
+    private function walkValidationContainer(object $container, DocumentTemplate $template, array $styleMetadata, array &$state, array &$issues, string $path, ?int $headingLevelContext = null, bool $isTopLevel = false): void
     {
         if ($container instanceof Table) {
             foreach ($container->getRows() as $rowIndex => $row) {
@@ -532,7 +614,7 @@ class DocumentProcessingService
 
         foreach ($container->getElements() as $elementIndex => $element) {
             $elementPath = $path . ' > ' . class_basename($element) . ' ' . ($elementIndex + 1);
-            $this->walkValidationElement($element, $template, $styleMetadata, $state, $issues, $elementPath, $headingLevelContext);
+            $this->walkValidationElement($element, $template, $styleMetadata, $state, $issues, $elementPath, $headingLevelContext, $isTopLevel);
         }
     }
 
@@ -551,11 +633,11 @@ class DocumentProcessingService
 
         foreach ($cell->getElements() as $elementIndex => $element) {
             $elementPath = $path . ' > ' . class_basename($element) . ' ' . ($elementIndex + 1);
-            $this->walkValidationElement($element, $template, $styleMetadata, $state, $issues, $elementPath, $headingLevelContext);
+            $this->walkValidationElement($element, $template, $styleMetadata, $state, $issues, $elementPath, $headingLevelContext, true);
         }
     }
 
-    private function walkValidationElement(object $element, DocumentTemplate $template, array $styleMetadata, array &$state, array &$issues, string $path, ?int $headingLevelContext = null): void
+    private function walkValidationElement(object $element, DocumentTemplate $template, array $styleMetadata, array &$state, array &$issues, string $path, ?int $headingLevelContext = null, bool $isTopLevel = false): void
     {
         if ($element instanceof Title) {
             $this->validateTitleElement($element, $template, $state, $issues, $path);
@@ -563,29 +645,297 @@ class DocumentProcessingService
             return;
         }
 
+        if ($element instanceof \PhpOffice\PhpWord\Element\Image) {
+            $style = $element->getStyle();
+            if ($style !== null) {
+                $leftMargin = (float) $template->left_margin_cm;
+                $rightMargin = (float) $template->right_margin_cm;
+                $printableWidthPt = (21.0 - $leftMargin - $rightMargin) * 28.35;
+                $width = (float) $style->getWidth();
+
+                if ($width > $printableWidthPt + 1.0) {
+                    $issues[] = [
+                        'path' => $path,
+                        'field' => 'image_width',
+                        'expected' => $printableWidthPt,
+                        'actual' => $width,
+                        'message' => 'Direct image width is wider than the printable area and was not scaled down.',
+                    ];
+                }
+
+                if ($width < $printableWidthPt - 1.0) {
+                    $actualAlignment = $style->getAlignment();
+                    $expectedAlignment = \PhpOffice\PhpWord\SimpleType\Jc::CENTER;
+                    if ($actualAlignment !== $expectedAlignment) {
+                        $issues[] = [
+                            'path' => $path,
+                            'field' => 'alignment',
+                            'expected' => $expectedAlignment,
+                            'actual' => $actualAlignment,
+                            'message' => 'Direct image style must be center aligned when narrower than printable area.',
+                        ];
+                    }
+                }
+            }
+            return;
+        }
+
+        if ($element instanceof \PhpOffice\PhpWord\Element\ListItem) {
+            $paragraphStyle = null;
+            $textObj = $element->getTextObject();
+            if ($textObj !== null) {
+                $paragraphStyle = $textObj->getParagraphStyle();
+            }
+            if ($paragraphStyle instanceof Paragraph) {
+                $actualSpaceAfter = (int) ($paragraphStyle->getSpaceAfter() ?? 0);
+                if ($actualSpaceAfter !== 0) {
+                    $issues[] = [
+                        'path' => $path,
+                        'field' => 'space_after',
+                        'expected' => 0,
+                        'actual' => $actualSpaceAfter,
+                        'message' => 'Bullet list item spacing after must be 0.',
+                    ];
+                }
+            }
+            $this->walkValidationContainer($element, $template, $styleMetadata, $state, $issues, $path, $headingLevelContext, false);
+            return;
+        }
+
         $headingLevel = $this->resolveHeadingLevel($element, $styleMetadata) ?? $headingLevelContext;
 
         if ($element instanceof TextRun) {
-            $this->validateParagraphStyle($element->getParagraphStyle(), $template, $headingLevel, $issues, $path);
-            $this->walkValidationContainer($element, $template, $styleMetadata, $state, $issues, $path, $headingLevel);
+            if ($element instanceof \PhpOffice\PhpWord\Element\ListItemRun) {
+                $paragraphStyle = $element->getParagraphStyle();
+                if ($paragraphStyle instanceof Paragraph) {
+                    $actualSpaceAfter = (int) ($paragraphStyle->getSpaceAfter() ?? 0);
+                    if ($actualSpaceAfter !== 0) {
+                        $issues[] = [
+                            'path' => $path,
+                            'field' => 'space_after',
+                            'expected' => 0,
+                            'actual' => $actualSpaceAfter,
+                            'message' => 'Bullet list item spacing after must be 0.',
+                        ];
+                    }
+                }
+                $this->walkValidationContainer($element, $template, $styleMetadata, $state, $issues, $path, $headingLevel, false);
+                return;
+            }
+
+            $hasImage = $this->hasImage($element);
+
+            if ($hasImage) {
+                $leftMargin = (float) $template->left_margin_cm;
+                $rightMargin = (float) $template->right_margin_cm;
+                $printableWidthPt = (21.0 - $leftMargin - $rightMargin) * 28.35;
+
+                $hasNarrowImage = false;
+                foreach ($element->getElements() as $child) {
+                    if ($child instanceof \PhpOffice\PhpWord\Element\Image) {
+                        $style = $child->getStyle();
+                        if ($style !== null) {
+                            $width = (float) $style->getWidth();
+                            if ($width > $printableWidthPt + 1.0) {
+                                $issues[] = [
+                                    'path' => $path,
+                                    'field' => 'image_width',
+                                    'expected' => $printableWidthPt,
+                                    'actual' => $width,
+                                    'message' => 'Image width is wider than the printable area and was not scaled down.',
+                                ];
+                            }
+                            if ($width < $printableWidthPt - 1.0) {
+                                $hasNarrowImage = true;
+                            }
+                        }
+                    }
+                }
+
+                $paragraphStyle = $element->getParagraphStyle();
+                if ($paragraphStyle instanceof Paragraph) {
+                    $expectedSpaceAfter = (int) round($template->line_spacing * $template->font_size * 20);
+                    $actualSpaceAfter = (int) ($paragraphStyle->getSpaceAfter() ?? 0);
+                    if (abs($actualSpaceAfter - $expectedSpaceAfter) > 20) {
+                        $issues[] = [
+                            'path' => $path,
+                            'field' => 'space_after',
+                            'expected' => $expectedSpaceAfter,
+                            'actual' => $actualSpaceAfter,
+                            'message' => 'Incorrect paragraph spacing after for image paragraph.',
+                        ];
+                    }
+
+                    if ($hasNarrowImage) {
+                        $actualAlignment = $paragraphStyle->getAlignment();
+                        $expectedAlignment = \PhpOffice\PhpWord\SimpleType\Jc::CENTER;
+                        if ($actualAlignment !== $expectedAlignment) {
+                            $issues[] = [
+                                'path' => $path,
+                                'field' => 'alignment',
+                                'expected' => $expectedAlignment,
+                                'actual' => $actualAlignment,
+                                'message' => 'Paragraph containing a narrow image must be center aligned.',
+                            ];
+                        }
+                    }
+                }
+
+                if ($isTopLevel) {
+                    $elements = $element->getElements();
+                    $firstText = '';
+                    if (count($elements) > 0 && $elements[0] instanceof Text) {
+                        $firstText = $elements[0]->getText();
+                    }
+                    if (str_starts_with($firstText, "\t")) {
+                        $issues[] = [
+                            'path' => $path,
+                            'field' => 'first_line_indent_tab',
+                            'expected' => '',
+                            'actual' => "\t",
+                            'message' => 'Paragraph containing an image must not start with a tab character.',
+                        ];
+                    }
+                }
+            } else {
+                $this->validateParagraphStyle($element->getParagraphStyle(), $template, $headingLevel, $issues, $path);
+
+                if ($isTopLevel && $headingLevel === null) {
+                    $elements = $element->getElements();
+                    $firstText = '';
+                    if (count($elements) > 0 && $elements[0] instanceof Text) {
+                        $firstText = $elements[0]->getText();
+                    }
+                    if (!str_starts_with($firstText, "\t")) {
+                        $issues[] = [
+                            'path' => $path,
+                            'field' => 'first_line_indent_tab',
+                            'expected' => "\t",
+                            'actual' => substr($firstText, 0, 1),
+                            'message' => 'Paragraph must start with a tab character for indentation.',
+                        ];
+                    }
+                }
+            }
+
+            $this->walkValidationContainer($element, $template, $styleMetadata, $state, $issues, $path, $headingLevel, false);
 
             return;
         }
 
         if ($element instanceof Text) {
+            if ($isTopLevel && $headingLevel === null) {
+                $text = $element->getText();
+                if (!str_starts_with($text, "\t")) {
+                    $issues[] = [
+                        'path' => $path,
+                        'field' => 'first_line_indent_tab',
+                        'expected' => "\t",
+                        'actual' => substr($text, 0, 1),
+                        'message' => 'Paragraph must start with a tab character for indentation.',
+                    ];
+                }
+            }
             $this->validateTextElement($element, $template, $headingLevel !== null, $issues, $path);
 
             return;
         }
 
         if (method_exists($element, 'getFontStyle') && method_exists($element, 'getParagraphStyle')) {
-            $this->validateTextLikeElement($element, $template, $headingLevel !== null, $issues, $path);
+            $hasImage = $this->hasImage($element);
+            if ($hasImage) {
+                $leftMargin = (float) $template->left_margin_cm;
+                $rightMargin = (float) $template->right_margin_cm;
+                $printableWidthPt = (21.0 - $leftMargin - $rightMargin) * 28.35;
+
+                $hasNarrowImage = false;
+                if (method_exists($element, 'getElements')) {
+                    foreach ($element->getElements() as $child) {
+                        if ($child instanceof \PhpOffice\PhpWord\Element\Image) {
+                            $style = $child->getStyle();
+                            if ($style !== null) {
+                                $width = (float) $style->getWidth();
+                                if ($width > $printableWidthPt + 1.0) {
+                                    $issues[] = [
+                                        'path' => $path,
+                                        'field' => 'image_width',
+                                        'expected' => $printableWidthPt,
+                                        'actual' => $width,
+                                        'message' => 'Image width is wider than the printable area and was not scaled down.',
+                                    ];
+                                }
+                                if ($width < $printableWidthPt - 1.0) {
+                                    $hasNarrowImage = true;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                $paragraphStyle = $element->getParagraphStyle();
+                if ($paragraphStyle instanceof Paragraph) {
+                    $expectedSpaceAfter = (int) round($template->line_spacing * $template->font_size * 20);
+                    $actualSpaceAfter = (int) ($paragraphStyle->getSpaceAfter() ?? 0);
+                    if (abs($actualSpaceAfter - $expectedSpaceAfter) > 20) {
+                        $issues[] = [
+                            'path' => $path,
+                            'field' => 'space_after',
+                            'expected' => $expectedSpaceAfter,
+                            'actual' => $actualSpaceAfter,
+                            'message' => 'Incorrect paragraph spacing after for image paragraph.',
+                        ];
+                    }
+
+                    if ($hasNarrowImage) {
+                        $actualAlignment = $paragraphStyle->getAlignment();
+                        $expectedAlignment = \PhpOffice\PhpWord\SimpleType\Jc::CENTER;
+                        if ($actualAlignment !== $expectedAlignment) {
+                            $issues[] = [
+                                'path' => $path,
+                                'field' => 'alignment',
+                                'expected' => $expectedAlignment,
+                                'actual' => $actualAlignment,
+                                'message' => 'Paragraph containing a narrow image must be center aligned.',
+                            ];
+                        }
+                    }
+                }
+
+                if ($isTopLevel && method_exists($element, 'getText')) {
+                    $text = $element->getText();
+                    if (str_starts_with($text, "\t")) {
+                        $issues[] = [
+                            'path' => $path,
+                            'field' => 'first_line_indent_tab',
+                            'expected' => '',
+                            'actual' => "\t",
+                            'message' => 'Paragraph containing an image must not start with a tab character.',
+                        ];
+                    }
+                }
+            } else {
+                if ($isTopLevel && $headingLevel === null) {
+                    if (method_exists($element, 'getText')) {
+                        $text = $element->getText();
+                        if (!str_starts_with($text, "\t")) {
+                            $issues[] = [
+                                'path' => $path,
+                                'field' => 'first_line_indent_tab',
+                                'expected' => "\t",
+                                'actual' => substr($text, 0, 1),
+                                'message' => 'Paragraph must start with a tab character for indentation.',
+                            ];
+                        }
+                    }
+                }
+                $this->validateTextLikeElement($element, $template, $headingLevel !== null, $issues, $path);
+            }
 
             return;
         }
 
         if (method_exists($element, 'getElements')) {
-            $this->walkValidationContainer($element, $template, $styleMetadata, $state, $issues, $path, $headingLevel);
+            $this->walkValidationContainer($element, $template, $styleMetadata, $state, $issues, $path, $headingLevel, false);
         }
     }
 
@@ -612,7 +962,7 @@ class DocumentProcessingService
 
         if ($text instanceof TextRun) {
             $this->validateParagraphStyle($text->getParagraphStyle(), $template, $depth, $issues, $path);
-            $this->walkValidationContainer($text, $template, [], $state, $issues, $path . ' > TitleText', $depth);
+            $this->walkValidationContainer($text, $template, [], $state, $issues, $path . ' > TitleText', $depth, false);
         }
     }
 
@@ -686,19 +1036,36 @@ class DocumentProcessingService
         }
 
         $expectedLineHeight = (float) $template->line_spacing;
-        if (abs((float) $paragraphStyle->getLineHeight() - $expectedLineHeight) > 0.05) {
+        $actualLineHeight = (float) $paragraphStyle->getLineHeight();
+        if ($actualLineHeight > 10.0) {
+            $actualLineHeight = round($actualLineHeight / 240.0, 2);
+        }
+        if (abs($actualLineHeight - $expectedLineHeight) > 0.05) {
             $issues[] = [
                 'path' => $path,
                 'field' => 'line_height',
                 'expected' => $expectedLineHeight,
-                'actual' => $paragraphStyle->getLineHeight(),
+                'actual' => $actualLineHeight,
                 'message' => 'Incorrect line spacing.',
+            ];
+        }
+
+        $expectedSpaceAfter = (int) round($template->line_spacing * $template->font_size * 20);
+        $actualSpaceAfter = (int) ($paragraphStyle->getSpaceAfter() ?? 0);
+
+        if (abs($actualSpaceAfter - $expectedSpaceAfter) > 20) {
+            $issues[] = [
+                'path' => $path,
+                'field' => 'space_after',
+                'expected' => $expectedSpaceAfter,
+                'actual' => $actualSpaceAfter,
+                'message' => 'Incorrect paragraph spacing after.',
             ];
         }
 
         $expectedIndent = $isHeading
             ? (float) $template->heading_first_line_indent_cm
-            : DocumentFormatHelper::standardTabStopCm();
+            : 0.0;
         $actualIndent = (float) DocumentFormatHelper::twipsToCm((int) ($paragraphStyle->getIndentFirstLine() ?? 0));
 
         if (abs($actualIndent - $expectedIndent) > 0.05) {
@@ -812,6 +1179,77 @@ class DocumentProcessingService
         }
     }
 
+    private function prependTabToTextRun(TextRun $textRun, DocumentTemplate $template): void
+    {
+        $text = new Text(
+            "\t",
+            DocumentFormatHelper::buildFontStyle($template->font_name, (int) $template->font_size, null, false),
+            $this->buildParagraphStyleForLevel($template)
+        );
+
+        if (method_exists($text, 'setParentContainer')) {
+            $text->setParentContainer($textRun);
+        }
+
+        if (method_exists($text, 'setElementIndex')) {
+            $text->setElementIndex(1);
+        }
+
+        if (method_exists($text, 'setElementId')) {
+            $text->setElementId();
+        }
+
+        $reflection = new \ReflectionClass($textRun);
+        $property = $reflection->getParentClass()?->getProperty('elements');
+        if ($property !== null) {
+            $property->setAccessible(true);
+            $elements = $property->getValue($textRun);
+            array_unshift($elements, $text);
+            $property->setValue($textRun, array_values($elements));
+        }
+    }
+
+    private function hasImage(object $element): bool
+    {
+        if ($element instanceof \PhpOffice\PhpWord\Element\Image) {
+            return true;
+        }
+        if (method_exists($element, 'getElements')) {
+            foreach ($element->getElements() as $child) {
+                if ($child instanceof \PhpOffice\PhpWord\Element\Image) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private function processImageElement(\PhpOffice\PhpWord\Element\Image $image, DocumentTemplate $template): void
+    {
+        $style = $image->getStyle();
+        if ($style === null) {
+            return;
+        }
+
+        $width = (float) $style->getWidth();
+        $height = (float) $style->getHeight();
+
+        $leftMargin = (float) $template->left_margin_cm;
+        $rightMargin = (float) $template->right_margin_cm;
+        $printableWidthPt = (21.0 - $leftMargin - $rightMargin) * 28.35;
+
+        if ($width > $printableWidthPt) {
+            $aspectRatio = $width / $height;
+            $newWidth = $printableWidthPt;
+            $newHeight = $printableWidthPt / $aspectRatio;
+
+            $style->setWidth($newWidth);
+            $style->setHeight($newHeight);
+        } else {
+            $style->setAlignment(\PhpOffice\PhpWord\SimpleType\Jc::CENTER);
+        }
+    }
+
     private function buildParagraphStyleForLevel(DocumentTemplate $template, ?int $headingLevel = null): array
     {
         $isHeading = $headingLevel !== null;
@@ -822,9 +1260,9 @@ class DocumentProcessingService
             $isHeading,
             $isHeading
                 ? (float) $template->heading_first_line_indent_cm
-                : DocumentFormatHelper::standardTabStopCm(),
+                : null,
             0,
-            0
+            (int) round($template->line_spacing * $template->font_size * 20)
         );
     }
 
