@@ -1,97 +1,101 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="300" alt="Laravel Logo"></a></p>
-
 # DocFormatter - DOCX Style Reformatter & Validator
 
-DocFormatter là một ứng dụng web mạnh mẽ được phát triển trên nền tảng **Laravel** (Backend) và **Vite** (Frontend) giúp tự động hóa quá trình định dạng, kiểm tra (validate) và xuất các tài liệu Word (`.docx`) dựa trên các Template mẫu tiêu chuẩn.
+[![PHP Version](https://img.shields.io/badge/php-%5E8.3-blue.svg)](https://www.php.net/)
+[![Laravel Version](https://img.shields.io/badge/laravel-%5E13.0-red.svg)](https://laravel.com)
+[![Vite](https://img.shields.io/badge/vite-%5E5.0-purple.svg)](https://vitejs.dev)
+[![Docker](https://img.shields.io/badge/docker-supported-blue.svg)](https://www.docker.com/)
+
+DocFormatter is a web application built on **Laravel** (Backend) and **Vite/Tailwind CSS v4** (Frontend) designed to automate the process of formatting, validating, and exporting Word documents (`.docx`) according to standard layout guidelines.
+
+*For the Vietnamese version, please see [readme.vn.md](file:///c:/Users/admin/docs-gpt/readme.vn.md).*
 
 ---
 
-## Tính Năng Nổi Bật
+## Key Features
 
-* **Định dạng tự động (Auto Formatting)**:
-  * Căn chỉnh lề trang (Top, Bottom, Left, Right) chính xác theo Template.
-  * Tự động thụt lề đầu dòng bằng ký tự Tab (`\t`) cho các đoạn văn thông thường (không áp dụng cho tiêu đề).
-  * Tự động căn chỉnh khoảng cách dòng (Line Spacing) và khoảng cách sau đoạn văn (`spaceAfter`).
-  * Áp dụng đánh số thứ tự tiêu đề tự động (Heading Numbering) cho các level tiêu đề từ 1 đến 4.
-* **Xử lý hình ảnh thông minh (Smart Image Processing)**:
-  * Tự động tính toán chiều rộng vùng in khả dụng dựa trên kích thước lề trang của template.
-  * Thu nhỏ (Scale) các hình ảnh có kích thước lớn để vừa khít với văn bản mà vẫn giữ nguyên tỷ lệ (Aspect Ratio) gốc.
-  * Tự động căn lề giữa cho các hình ảnh có chiều rộng nhỏ hơn vùng in.
-  * Loại bỏ hoàn toàn thụt lề bằng ký tự tab đầu dòng đối với các đoạn có chứa hình ảnh.
-* **Tự động định dạng danh sách (Bullet Lists)**:
-  * Tích hợp sâu vào DOCX engine giúp thu nhỏ kích thước chấm tròn (bullet points) về size **8pt** chuyên nghiệp.
-  * Loại bỏ khoảng cách cách đoạn trên/dưới của các list item (`spaceAfter = 0`, `spaceBefore = 0`) và thiết lập giãn dòng đơn (`lineHeight = 1.0`).
-* **Báo cáo kiểm tra chất lượng (Validation Report)**:
-  * Quét tài liệu và chỉ ra cụ thể các điểm không tuân thủ định dạng tiêu chuẩn (Font chữ, cỡ chữ, căn lề, thụt dòng, khoảng cách đoạn, kích thước ảnh, danh sách...).
-* **Khung xem trước trực quan (Live Preview)**:
-  * Hiển thị trực quan nội dung tài liệu ngay trên giao diện Web theo chuẩn trang A4 trước khi người dùng thực hiện tải xuống.
+* **Auto Formatting**:
+  * Automatically sets page margins (top, bottom, left, right) based on selected templates.
+  * Prepends tab characters (`\t`) for paragraph first-line indents (excluding heading paragraphs).
+  * Automatically aligns line spacing (Line Height) and paragraph spacing after (`spaceAfter`) dynamically.
+  * Generates sequential title numbering (headings levels 1 to 4) if enabled.
+* **Smart Image Processing**:
+  * Dynamically computes the printable page width based on template margins.
+  * Automatically resizes (scales) oversized images to fit within the printable margins while maintaining their original aspect ratio.
+  * Center-aligns images that are narrower than the printable page width.
+  * Automatically prevents tab characters (`\t`) from being prepended to paragraphs containing images.
+* **Optimized Bullet Lists**:
+  * Integrates deep into the DOCX engine numbering structure to set bullet symbol (dot marker) sizes to **8pt** (16 half-points) for cleaner document design.
+  * Enforces tight spacing between bullet items by setting space before/after to `0` and line height to `1.0` (single spacing).
+* **Document Quality Validator**:
+  * Scans uploaded documents and reports layout non-compliance (incorrect fonts, spacing, alignment, margins, image bounds, and list styles).
+* **A4 Live Preview**:
+  * Renders formatting results on an A4-proportioned container on the web page, allowing users to verify styling before downloading.
 
 ---
 
-## Hướng Dẫn Cài Đặt và Khởi Chạy
+## Installation & Getting Started
 
-### Cách 1: Sử dụng Docker & Docker Compose (Khuyên dùng - Mở là chạy luôn)
+### Method 1: Using Docker & Docker Compose (Recommended)
 
-Yêu cầu máy tính cài đặt sẵn Docker và Docker Compose. Bạn chỉ cần chạy lệnh sau tại thư mục gốc:
+Make sure you have Docker and Docker Compose installed on your system. Run the following command at the project root:
 
 ```bash
-# Khởi động các container ở chế độ background và tự động build
 docker-compose up -d --build
 ```
 
-* Hệ thống sẽ tự động cài đặt các thư viện PHP/Node.js, build các file giao diện tĩnh (Vite), khởi tạo MySQL, tự động chạy migrations, seeders dữ liệu và tạo storage link.
-* Truy cập ứng dụng tại địa chỉ: **[http://localhost:8000](http://localhost:8000)**
-* Để tắt ứng dụng: `docker-compose down`
+Once the containers are up:
+* Open your browser and navigate to: **[http://localhost:8000](http://localhost:8000)**
+* All database migrations, initial seeding, and storage links are automatically set up by the container entrypoint.
+* To stop the services: `docker-compose down`
 
 ---
 
-### Cách 2: Cài đặt Thủ công (Local Environment)
+### Method 2: Manual Installation (Local Environment)
 
-#### Yêu cầu hệ thống
-* PHP >= 8.3 (yêu cầu cài đặt các PHP Extension: `gd`, `zip`, `pdo_mysql`, `mbstring`, `xml`, `bcmath`).
+#### Prerequisites
+* PHP >= 8.3 (with `gd`, `zip`, `pdo_mysql`, `mbstring`, `xml`, and `bcmath` extensions installed).
 * Composer.
-* Node.js (phiên bản 18 hoặc mới hơn) & NPM.
-* Một cơ sở dữ liệu MySQL trống (hoặc SQLite).
+* Node.js >= 18 & NPM.
+* A blank MySQL database.
 
-#### Các bước thực hiện:
+#### Setup Steps:
 
-1. **Cài đặt thư viện Backend**:
+1. **Install Backend Dependencies**:
    ```bash
    composer install
    ```
 
-2. **Cấu hình môi trường**:
-   Sao chép file cấu hình và cập nhật thông tin kết nối cơ sở dữ liệu của bạn trong `.env`:
+2. **Configure Mappings & Keys**:
+   Copy `.env.example` to `.env` and fill in your MySQL database credentials, then generate the application key:
    ```bash
    cp .env.example .env
    php artisan key:generate
    ```
 
-3. **Cài đặt cơ sở dữ liệu**:
+3. **Run Migrations & Seeds**:
    ```bash
    php artisan migrate --seed
    php artisan storage:link
    ```
 
-4. **Cài đặt thư viện Frontend & Build assets**:
+4. **Install Frontend Dependencies & Bundle Assets**:
    ```bash
    npm install
    npm run build
    ```
 
-5. **Khởi chạy Server**:
-   Để chạy ứng dụng ở môi trường phát triển (Local Development) hỗ trợ Hot Reload:
+5. **Start Servers (Development Mode)**:
+   Launch the concurrent server (runs Artisan host and Vite development server simultaneously with hot-reload support):
    ```bash
    npm run dev
    ```
-   *Lệnh trên sẽ tự động khởi động máy chủ Laravel (Artisan serve) và máy chủ Vite phát triển cùng một lúc.*
-   *Truy cập ứng dụng tại: **[http://localhost:8000](http://localhost:8000)***
+   *Access the application at **[http://localhost:8000](http://localhost:8000)***
 
 ---
 
-## Cấu Trúc Dự Án Chính
+## Core File Directory
 
-* [DocumentProcessingService.php](file:///c:/Users/admin/docs-gpt/app/Services/DocumentProcessingService.php): Engine lõi xử lý định dạng tài liệu, co giãn hình ảnh, quản lý bullet list, và chạy bộ quét lỗi định dạng (Validation).
-* [DocumentFormatHelper.php](file:///c:/Users/admin/docs-gpt/app/Helpers/DocumentFormatHelper.php): Các hàm tiện ích chuyển đổi đơn vị và xây dựng style cho PHPWord.
-* [Numbering.php](file:///c:/Users/admin/docs-gpt/vendor/phpoffice/phpword/src/PhpWord/Writer/Word2007/Part/Numbering.php): Lớp mở rộng ghi cấu trúc XML tùy chỉnh size 8pt cho bullet points.
-* [index.blade.php](file:///c:/Users/admin/docs-gpt/resources/views/index.blade.php): Giao diện người dùng đơn trang (Single Page UI) được tối ưu hóa đẹp mắt với Tailwind CSS v4 và DaisyUI.
+* [DocumentProcessingService.php](file:///c:/Users/admin/docs-gpt/app/Services/DocumentProcessingService.php): Primary engine handling DOCX element traversal, image sizing, list formatting, and style validation.
+* [DocumentFormatHelper.php](file:///c:/Users/admin/docs-gpt/app/Helpers/DocumentFormatHelper.php): Helper functions for units conversion and PhpWord styling objects generator.
+* [Numbering.php](file:///c:/Users/admin/docs-gpt/vendor/phpoffice/phpword/src/PhpWord/Writer/Word2007/Part/Numbering.php): Custom XML serialization writer overriding bullet size properties to 8pt.
+* [index.blade.php](file:///c:/Users/admin/docs-gpt/resources/views/index.blade.php): Modern Single Page application view styled with Tailwind CSS v4 and DaisyUI.

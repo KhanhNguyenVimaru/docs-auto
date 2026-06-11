@@ -527,11 +527,23 @@
             const toast = document.getElementById('toast');
             const inner = document.getElementById('toast-inner');
             document.getElementById('toast-msg').textContent = message;
-            inner.className = `alert alert-${type} shadow-lg text-sm py-2.5 px-4 text-white`;
+            
+            let bgClass = '';
+            if (type === 'success') {
+                bgClass = 'bg-emerald-600 text-white';
+            } else if (type === 'error' || type === 'danger') {
+                bgClass = 'bg-red-600 text-white';
+            } else if (type === 'warning') {
+                bgClass = 'bg-amber-500 text-white';
+            } else {
+                bgClass = 'bg-slate-800 text-white';
+            }
+            
+            inner.className = `alert shadow-lg text-sm py-2.5 px-4 font-semibold ${bgClass}`;
             toast.classList.remove('hidden');
 
             clearTimeout(toastTimer);
-            toastTimer = setTimeout(() => toast.classList.add('hidden'), 3000);
+            toastTimer = setTimeout(() => toast.classList.add('hidden'), 5000);
         }
 
         function escapeHtml(value) {
