@@ -46,6 +46,7 @@ docker-compose up -d --build
 Once the containers are up:
 * Open your browser and navigate to: **[http://localhost:8000](http://localhost:8000)**
 * All database migrations, initial seeding, and storage links are automatically set up by the container entrypoint.
+* The app container also starts the Vite dev server on port `5173` so frontend assets hot-reload alongside Apache/PHP.
 * To stop the services: `docker-compose down`
 
 ---

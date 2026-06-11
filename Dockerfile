@@ -8,7 +8,7 @@ COPY vite.config.js ./
 RUN npm run build
 
 # --- Stage 2: Application Container ---
-FROM php:8.3-apache
+FROM php:8.4-apache
 
 # Install system dependencies and PHP extensions
 RUN apt-get update && apt-get install -y \
@@ -18,6 +18,8 @@ RUN apt-get update && apt-get install -y \
     libfreetype6-dev \
     libxml2-dev \
     libonig-dev \
+    nodejs \
+    npm \
     zip \
     unzip \
     git \
@@ -36,6 +38,10 @@ WORKDIR /var/www/html
 
 # Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+
+# Install Node dependencies for Vite dev server
+COPY package*.json ./
+RUN npm ci
 
 # Copy application files
 COPY . .
